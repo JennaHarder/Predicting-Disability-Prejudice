@@ -1,0 +1,108 @@
+---
+title: "Predicting Disability Prejudice"
+author: "Jenna Harder"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Data
+
+This is a dataset from a web study of prejudice against people with disabilities. Here, we'll be playing with a subset of that data--45,605 people who indicated that they themselves had disabilities--to identify how best to predict explicit (conscious) prejudice against people with disabilities among that very population.
+
+Our variables include demographic variables, measures of certain experiences (e.g. self-reported severity of own disability), and some measures of different kinds of prejudice.
+
+```{r}
+diat <- read.csv("diatCleanPWD.csv")
+library(caret)
+```
+
+Even though this is a question of people being prejudiced against themselves, there is still some variation in their prejudicial attitudes:
+
+```{r, echo=FALSE}
+hist(diat$ExplicitAttitude)
+```
+
+#Building a model
+
+First, let's split our data and train an initial model. We'll use 10-fold cross validation with 5 repeats, which should give us a decent level of precision.
+
+We'll use linear regression; however, since we're including both "age" and "age-squared," the model is able to test for a u-shaped relationship with age (which has been observed in some past studies on disability prejudice among people who don't have disabilities). If both age and age-squared are significant and have opposite signs, that will indicate a u-shaped relationship.
+
+```{r}
+set.seed(112) #for reproducibility
+
+train_control <- trainControl(method="repeatedcv", number=10, repeats=5)
+
+model <- train(ExplicitAttitude~., data=diat, 
+               preProcess = c("scale", "center"), 
+               trControl=train_control, 
+               method="lm", 
+               na.action = na.omit) #this will shrink our sample
+
+summary(model)
+
+model$results[2] #RMSE
+```
+Our model has an adjusted R-squared of 0.2372 and an RMSE of 0.5929 (note that our DV ranges from 1 to 5). 
+
+##Refining the model
+
+Several variables were nonsignificant in our model, and we may want to get rid of those if we can do so without decreasing our predictive power. 
+
+The nonsignificant variables are: 
+
+Age of the participant
+
+"Pervasiveness" of the disability (to what extent does it affect daily activities?)
+
+Duration of the disability (how long has the participant had it?)
+
+Perceived permanence of the disability (binary variable: does the participant expect it to continue over the long term?)
+
+We may not want to get rid of age, because we have a wide range of ages in this sample and the education variable (which was significant) will mean something very different if we are not controlling for age. "Duration" is also nearly significant, so I'm tempted to leave that in. But let's find out what happens if we get rid of Pervasiveness and Permanence:
+
+``` {r}
+model2 <- train(ExplicitAttitude~. -permEffects -pervasive2, 
+               data=diat, 
+               preProcess = c("scale", "center"), 
+               trControl=train_control, 
+               method="lm", 
+               na.action = na.omit)
+
+summary(model2)
+
+model2$results[2]
+```
+
+The adjusted R-squared is still .2372, and the RMSE is 0.5928: negligibly lower than the previous one. So we probably don't need those variables.
+
+Let's see what happens when we get rid of age and duration, just to be thorough.
+
+```{r}
+model3 <- train(ExplicitAttitude~. -permEffects -pervasive2 -age2 -duration2, 
+               data=diat, 
+               preProcess = c("scale", "center"), 
+               trControl=train_control, 
+               method="lm", 
+               na.action = na.omit)
+
+summary(model3)
+
+model3$results[2]
+```
+
+Excluding age and duration has changed very little: our adjusted R-squared has gone down by 0.0001, and our RMSE remains about the same. Given this, there probably isn't much justification to leave age and duration in the model.  
+
+This model's predictive ability isn't dramatic: it explains just shy of 24% of the variance. It would have been helpful if we'd had more data about these people, such as the specific type of disability each of them had. Our strongest predictors were "tabled" and "tdisabled," both of which are other measures of prejudice (those are measures of a more emotion-based form of prejudice, whereas the measure we're predicting here is tapping into a more cognitive/opinion-based form of prejudice.) 
+
+Some of the other variables are only slightly contributing to the prediction of explicit prejudice. We could probably streamline the model further by getting rid of some of those without decreasing the model's predictive ability too much. However, efficiency isn't really a concern here with only 10 predictors, and all these predictors are significant: so we'll call this our final model.
+
+
+
+
+
